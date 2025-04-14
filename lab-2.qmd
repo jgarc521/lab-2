@@ -14,6 +14,8 @@ editor: source
 ```{r}
 library(tidyverse)
 library(wesanderson)
+library(leaflet)
+library(rnaturalearth)
 ```
 
 # Part One: Identifying Bad Visualizations
@@ -96,6 +98,8 @@ data <- readxl::read_excel("/Users/josegarcia/Desktop/STAT_541/wgm2018.xlsx", sh
 ```
 
 ```{r}
+
+# country codes
 country_codes_list <- dict$`Variable Type & Codes*`[1] |>
   str_split(", ", simplify = TRUE) |>
   as_tibble() |>
@@ -106,9 +110,24 @@ country_codes_list <- dict$`Variable Type & Codes*`[1] |>
   country = str_trim(country) |> str_remove(",$")
 )
 
-full_data <- data |>
-  left_join(country_codes_list, by = "code")
+# region codes
+region_codes_list <- dict$`Variable Type & Codes*`[57] |>
+  str_split(",", simplify = TRUE) |>
+  as_tibble() |>
+  pivot_longer(cols = everything(), names_to = NULL, values_to = "col") |>
+  mutate(col = str_trim(col)) |>
+  filter(col != "") |>
+  separate_wider_delim("col", delim = "=", names = c("Regions_Report", "region")) |>
+  mutate(
+    region_code = as.integer(str_trim(Regions_Report)),
+    region = str_trim(region),
+    Regions_Report = as.integer(Regions_Report)
+  )
 
+# join data
+full_data <- data |>
+  left_join(country_codes_list, by = "code") |>
+  left_join(region_codes_list, by = "Regions_Report")
 ```
 
 ```{r}
@@ -189,7 +208,32 @@ The full Wellcome Global Monitor 2018 report can be found here: <https://wellcom
 ```{r}
 #| label: second-improved-visualization
 
+world <- ne_countries(type = "countries", scale = "small")
 
+science_pct <- full_data |>
+  mutate(country = if_else(country == "United States", "United States of America", country)) |>
+  group_by(country) |>
+  summarise(
+    total_strong = sum(Q1 %in% c(1, 2), na.rm = TRUE),
+    total = n(),
+    percent_strong = total_strong / total * 100
+  )
+
+map_data <- world |>
+  left_join(science_pct, by = c("name" = "country"))
+
+qpal <- colorNumeric("YlGnBu", domain = map_data$percent_strong, na.color = "white")
+
+leaflet(map_data) |>
+  addTiles() |>
+  addPolygons(stroke = FALSE, smoothFactor = 0.2, fillOpacity = 1,
+    color = ~qpal(percent_strong),
+    label = ~paste0(name, ": ", round(percent_strong, 1), "%")) |>
+  addLegend(pal = qpal, values = map_data$percent_strong, title = "Knowledge Level (%)", position = "bottomright")|>
+  addControl(
+    html = "Map of perceived knowledge about science by country",
+    position = "topright"
+  )
 ```
 
 ## Third Data Visualization Improvement
@@ -211,5 +255,91 @@ The full Wellcome Global Monitor 2018 report can be found here: <https://wellcom
 ```{r}
 #| label: third-improved-visualization
 
+trust_scientists <- full_data |>
+  filter(WGM_Indexr %in% c(1, 2, 3, 99), !is.na(region)) |>
+  mutate(
+    trust_level = case_when(
+      WGM_Indexr == 1 ~ "Low",
+      WGM_Indexr == 2 ~ "Medium",
+      WGM_Indexr == 3 ~ "High",
+      WGM_Indexr == 99 ~ "Don't know / Refused"
+    )
+  ) |>
+  group_by(region, trust_level) |>
+  summarise(n = n(), .groups = "drop") |>
+  group_by(region) |>
+  mutate(percent = n / sum(n) * 100)
 
+trust_global <- full_data |>
+  mutate(
+    trust_level = case_when(
+      WGM_Indexr == 1 ~ "Low",
+      WGM_Indexr == 2 ~ "Medium",
+      WGM_Indexr == 3 ~ "High",
+      WGM_Indexr == 99 ~ "Don't know / Refused"
+    )
+  ) |>
+  group_by(trust_level) |>
+  summarise(
+    total = n(),
+    .groups = "drop"
+  ) |>
+  mutate(
+    percent = total / sum(total) * 100,
+    region = "World"
+  )
+
+trust_scientists <- bind_rows(trust_scientists, trust_global)
+```
+
+```{r}
+library(ggplot2)
+
+trust_scientists <- trust_scientists |>
+  mutate(
+    trust_level = factor(trust_level, levels = c("Don't know / Refused", "Low", "Medium", "High"))
+  )
+
+custom_colors <- c(
+  "Don't know / Refused" = "#f4a261",  
+  "Low" = "#c6dbef",
+  "Medium" = "#6baed6",
+  "High" = "#4292c6"
+)
+
+ggplot(trust_scientists, aes(x = percent, y = region, fill = trust_level)) +
+  geom_col(width = 0.7, position = "stack") +
+  geom_text(
+    aes(
+      label = paste0(round(percent), "%"),
+      color = case_when(
+        trust_level %in% c("High", "Low") ~ "black",
+        TRUE ~ "white"
+      ),
+      group = trust_level
+    ),
+    position = position_stack(vjust = 0.5),
+    size = 4,
+    fontface = "bold"
+  ) +
+  scale_fill_manual(values = custom_colors) +
+  scale_color_identity() +
+  labs(
+    title = "Trust in Scientists Index showing levels of trust by region",
+    subtitle = "Percentage of people who answered ‘high trust’, ‘medium trust’ or ‘low trust’.",
+    caption = "Wellcome Global Monitor Trust in Scientists Index.",
+    x = "",
+    y = "",
+    fill = "Trust Level"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(size = 16, face = "bold"),
+    plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
+    plot.caption = element_text(size = 9, margin = margin(t = 10)),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    axis.text.y = element_text(size = 12),
+    axis.text.x = element_blank()
+  )
 ```
