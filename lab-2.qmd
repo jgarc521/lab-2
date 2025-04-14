@@ -1,7 +1,10 @@
 ---
 title: "Lab 2"
+author: "Jose Garcia"
 subtitle: "Advanced Data Visualization"
 editor: source
+embed-resources: TRUE
+messages: FALSE
 ---
 
 # Instructions
@@ -16,6 +19,7 @@ library(tidyverse)
 library(wesanderson)
 library(leaflet)
 library(rnaturalearth)
+library(plotly)
 ```
 
 # Part One: Identifying Bad Visualizations
@@ -115,8 +119,8 @@ region_codes_list <- dict$`Variable Type & Codes*`[57] |>
   str_split(",", simplify = TRUE) |>
   as_tibble() |>
   pivot_longer(cols = everything(), names_to = NULL, values_to = "col") |>
-  mutate(col = str_trim(col)) |>
-  filter(col != "") |>
+  mutate(col = str_trim(col)) |> # trim white space
+  filter(col != "") |> # filter out blanks
   separate_wider_delim("col", delim = "=", names = c("Regions_Report", "region")) |>
   mutate(
     region_code = as.integer(str_trim(Regions_Report)),
@@ -140,7 +144,7 @@ safe_vax_pct <- full_data |>
     .groups = "drop"
   ) |>
   left_join(full_data |> select(country, Regions_Report) |> distinct(), by = "country") |>
-  mutate(region = case_when(
+  mutate(region = case_when( # build regions
     Regions_Report %in% c(10, 11, 12)      ~ "Asia",                      
     Regions_Report %in% c(3, 13)           ~ "Middle East and North Africa",  
     Regions_Report %in% c(1, 2, 4, 5)      ~ "Sub-Saharan Africa",        
@@ -182,7 +186,6 @@ safe_vax_pct |>
     panel.grid.major.y = element_blank(),
     legend.position = "none"
   )
-
 ```
 
 # Part Two: Broad Visualization Improvement
@@ -195,13 +198,55 @@ The full Wellcome Global Monitor 2018 report can be found here: <https://wellcom
 
 7.  Select a data visualization in the report that you think could be improved. Be sure to cite both the page number and figure title. Do your best to tell the story of this graph in words. That is, what is this graph telling you? What do you think the authors meant to convey with it?
 
+    <div>
+
+    I decided to recreate and improve Chart 2.3: Map of perceived knowledge about science by country which is on page 27 of the report. The map shows the perceived knowledge about science of people in different countries. The authors may be trying to convey that peoples confidence in their science knowledge varies across countries. Certain countries may have lower confidence due to a limited access to educational resources, however it is important to note that plots like these can be damaging as viewers might interpret lower metrics as a reflection of a country's intelligence/worth (when that is simply not true).
+
+    </div>
+
 8.  List the variables that appear to be displayed in this visualization.
+
+    <div>
+
+    -   Country
+
+    -   Percent who answered "a lot" or "some"
+
+    -   Surveyed status?
+
+    </div>
 
 9.  Now that you're versed in the grammar of graphics (ggplot), list the aesthetics used and which variables are specified for each.
 
+    <div>
+
+    -   fill for the percents
+
+    -   geometry for country
+
+    -   color for survey status
+
+    </div>
+
 10. What type of graph would you call this?
 
+    <div>
+
+    Choropleth map
+
+    </div>
+
 11. List all of the problems or things you would improve about this graph.
+
+    <div>
+
+    -   use different colors for better contrast
+
+    -   hover over to see percents
+
+    -   differentiate NA's more clearly
+
+    </div>
 
 12. Improve the visualization above by either re-creating it with the issues you identified fixed OR by creating a new visualization that you believe tells the same story better.
 
@@ -242,23 +287,69 @@ leaflet(map_data) |>
 
 13. Select a data visualization in the report that you think could be improved. Be sure to cite both the page number and figure title. Do your best to tell the story of this graph in words. That is, what is this graph telling you? What do you think the authors meant to convey with it?
 
+    <div>
+
+    For the second visualization, I chose Chart 3.1: Trust in Scientists Index showing levels of trust by region which is on page 53. The chart shows us the levels in which people trust scientists from different regions. The authors may be trying to display where certain regions may trust scientists less in order to identify where resources/policy changes could be needed.
+
+    </div>
+
 14. List the variables that appear to be displayed in this visualization.
+
+    <div>
+
+    -   Region
+
+    -   Trust level
+
+    -   Percent for each level within each region
+
+    </div>
 
 15. Now that you're versed in the grammar of graphics (ggplot), list the aesthetics used and which variables are specified for each.
 
+    <div>
+
+    -   y = region
+
+    -   x = percent
+
+    -   fill = trust level
+
+    </div>
+
 16. What type of graph would you call this?
 
+    <div>
+
+    This is a stacked bar chart.
+
+    </div>
+
 17. List all of the problems or things you would improve about this graph.
+
+    <div>
+
+    -   colors are not intuitive
+
+    -   no clear sorting
+
+    -   fonts are too small
+
+    -   too crowed
+
+    -   could use interactive elements
+
+    </div>
 
 18. Improve the visualization above by either re-creating it with the issues you identified fixed OR by creating a new visualization that you believe tells the same story better.
 
 ```{r}
 #| label: third-improved-visualization
 
-trust_scientists <- full_data |>
+trust_scientists <- full_data |> # calculate percents by countries
   filter(WGM_Indexr %in% c(1, 2, 3, 99), !is.na(region)) |>
   mutate(
-    trust_level = case_when(
+    trust_level = case_when( 
       WGM_Indexr == 1 ~ "Low",
       WGM_Indexr == 2 ~ "Medium",
       WGM_Indexr == 3 ~ "High",
@@ -270,7 +361,7 @@ trust_scientists <- full_data |>
   group_by(region) |>
   mutate(percent = n / sum(n) * 100)
 
-trust_global <- full_data |>
+trust_global <- full_data |> # calculate global percentage
   mutate(
     trust_level = case_when(
       WGM_Indexr == 1 ~ "Low",
@@ -289,15 +380,14 @@ trust_global <- full_data |>
     region = "World"
   )
 
-trust_scientists <- bind_rows(trust_scientists, trust_global)
+trust_scientists <- bind_rows(trust_scientists, trust_global) # bind
 ```
 
 ```{r}
-library(ggplot2)
 
 trust_scientists <- trust_scientists |>
-  mutate(
-    trust_level = factor(trust_level, levels = c("Don't know / Refused", "Low", "Medium", "High"))
+  mutate( # create factors
+    trust_level = factor(trust_level, levels = c("High", "Medium", "Low", "Don't know / Refused"))
   )
 
 custom_colors <- c(
@@ -307,27 +397,16 @@ custom_colors <- c(
   "High" = "#4292c6"
 )
 
-ggplot(trust_scientists, aes(x = percent, y = region, fill = trust_level)) +
+p <- ggplot(trust_scientists, aes(x = percent, y = region, fill = trust_level, text = paste0(
+    "Region: ", region, "<br>",
+    "Trust Level: ", trust_level, "<br>",
+    "Percent: ", round(percent), "%"
+  )
+  )) +
   geom_col(width = 0.7, position = "stack") +
-  geom_text(
-    aes(
-      label = paste0(round(percent), "%"),
-      color = case_when(
-        trust_level %in% c("High", "Low") ~ "black",
-        TRUE ~ "white"
-      ),
-      group = trust_level
-    ),
-    position = position_stack(vjust = 0.5),
-    size = 4,
-    fontface = "bold"
-  ) +
   scale_fill_manual(values = custom_colors) +
-  scale_color_identity() +
   labs(
     title = "Trust in Scientists Index showing levels of trust by region",
-    subtitle = "Percentage of people who answered ‘high trust’, ‘medium trust’ or ‘low trust’.",
-    caption = "Wellcome Global Monitor Trust in Scientists Index.",
     x = "",
     y = "",
     fill = "Trust Level"
@@ -335,11 +414,16 @@ ggplot(trust_scientists, aes(x = percent, y = region, fill = trust_level)) +
   theme_minimal() +
   theme(
     plot.title = element_text(size = 16, face = "bold"),
-    plot.subtitle = element_text(size = 12, margin = margin(b = 10)),
-    plot.caption = element_text(size = 9, margin = margin(t = 10)),
-    panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
-    axis.text.y = element_text(size = 12),
-    axis.text.x = element_blank()
+    panel.grid.major.y = element_blank(),
+    axis.text.x = element_blank(),
+    axis.text.y = element_text(size = 12)
+  )
+
+ggplotly(p, tooltip = "text") |>
+  layout(
+    legend = list(
+      font = list(size = 13)
+    )
   )
 ```
